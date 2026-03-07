@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 
 def parse_args() -> tuple[str, str]:
     """
@@ -39,3 +40,25 @@ def _default_output_path(input_path: str) -> str:
     directory = os.path.dirname(input_path)
     filename = f"{base}.analysis.json"
     return os.path.join(directory, filename) if directory else filename
+
+
+def validate_input(input_path: str) -> None:
+    """
+    Validate the input file.
+    Raises SystemExit with a clear message on any error.
+    """
+    if not os.path.exists(input_path):
+        print(f"Error: File '{input_path}' does not exist.")
+        sys.exit(1)
+
+    if not os.path.isfile(input_path):
+        print(f"Error: '{input_path}' is not a file.")
+        sys.exit(1)
+
+    if not input_path.lower().endswith(".txt"):
+        print(f"Error: '{input_path}' is not a .txt file. Only plain text files are supported.")
+        sys.exit(1)
+
+    if os.path.getsize(input_path) == 0:
+        print(f"Error: File '{input_path}' is empty.")
+        sys.exit(1)

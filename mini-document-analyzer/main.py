@@ -3,6 +3,7 @@ import json
 import sys
 import os
 from cli import parse_args, validate_input
+from analyzer import analyze_document
 
 async def export_json(data: dict, output_path: str) -> None:
     await asyncio.to_thread(_write_json, data, output_path)
@@ -20,7 +21,11 @@ async def main() -> None:
 
     validate_input(input_path)
 
-    result = _stub_result(input_path)
+    try:
+        result = await analyze_document(input_path)
+    except Exception as e:
+        print(f"Error during document analysis: {e}")
+        sys.exit(1)
 
     try:
         await export_json(result, output_path)
@@ -30,29 +35,6 @@ async def main() -> None:
 
     print(f"Analysis complete. Results saved to '{output_path}'.")
 
-
-def _stub_result(input_path: str) -> dict:
-    """
-    Temporary placeholder replace with real analyzer output once
-    Developer A modules are merged.
-    """
-
-    return {
-        "document": {
-            "filename": os.path.basename(input_path),
-            "total_characters": 0,
-            "total_words": 0,
-            "total_sentences": 0,
-        },
-        "content": {
-            "cleaned_text": "",
-            "tokens": [],
-        },
-        "statistics": {
-            "word_frequencies": {},
-            "top_10_words": [],
-        },
-    }
 
 
 if __name__ == "__main__":

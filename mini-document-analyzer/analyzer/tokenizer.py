@@ -1,12 +1,13 @@
 import re
 
-def clean_and_tokenize(text: str) -> tuple[str, list[str]]:
+def clean_text(text: str) -> str:
     """
-    Clean text by converting to lowercase and removing punctuation,
-    then tokenize it by splitting on whitespace.
+    Clean text by converting to lowercase and removing punctuation.
     """
-    
-    cleaned_text = re.sub(r'[^\w\s]', '', text.lower())
-    tokens = cleaned_text.split()
-    
-    return cleaned_text, tokens
+    return re.sub(r'[^\w\s]', '', text.lower())
+
+def tokenize(text: str) -> list[str]:
+    """
+    Tokenize text by splitting on whitespace.
+    """
+    return text.split()

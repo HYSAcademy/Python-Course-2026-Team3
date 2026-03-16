@@ -12,7 +12,7 @@ class ArchiveRepository:
 
     async def create_archive(self, archive: Archive) -> Archive:
         self.session.add(archive)
-        await self.session.commit()
+        await self.session.flush() 
         await self.session.refresh(archive)
         return archive
 
@@ -34,14 +34,26 @@ class ArchiveRepository:
         if archive:
             archive.status = status
             archive.error_message = error_message
-            await self.session.commit()
+            await self.session.flush()
 
     async def save_extracted_files(
         self,
         files: list[ExtractedFile],
     ) -> None:
-        self.session.add_all(files)
-        await self.session.commit()
+        await self.session.run_sync(
+            lambda session: session.bulk_insert_mappings(
+                ExtractedFile,
+                [
+                    {
+                        "archive_id": f.archive_id,
+                        "file_name": f.file_name,
+                        "size_bytes": f.size_bytes,
+                        "content": f.content,
+                    }
+                    for f in files
+                ],
+            )
+        )
 
     async def get_failed_archives(self) -> list[Archive]:
         result = await self.session.execute(

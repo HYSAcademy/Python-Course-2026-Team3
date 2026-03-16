@@ -1,5 +1,8 @@
+import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
 
 
 async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
@@ -17,6 +20,7 @@ async def unsupported_media_handler(request: Request, exc: Exception) -> JSONRes
 
 
 async def internal_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled exception: %s", exc) 
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error. Please try again later."},
@@ -26,3 +30,4 @@ async def internal_error_handler(request: Request, exc: Exception) -> JSONRespon
 def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ValueError, value_error_handler)
     app.add_exception_handler(Exception, internal_error_handler)
+    app.add_exception_handler(UnicodeDecodeError, unsupported_media_handler)

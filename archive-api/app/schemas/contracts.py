@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from enum import Enum
 
@@ -17,12 +17,16 @@ class ArchiveUploadResponse(BaseModel):
 class ExtractedFileSchema(BaseModel):
     file_name: str
     size_bytes: int
+    
+    model_config = ConfigDict(from_attributes=True)
 
 class ArchiveDetailResponse(BaseModel):
     archive_id: str
     status: ArchiveStatus
+    s3_url: Optional[str] = None
     error_message: Optional[str] = None
     extracted_files: List[ExtractedFileSchema] = []
+    model_config = ConfigDict(from_attributes=True)
 
 class ParsedDocument(BaseModel):
     original_filename: str

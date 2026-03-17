@@ -45,4 +45,5 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Archive API", lifespan=lifespan)
+
 register_exception_handlers(app)

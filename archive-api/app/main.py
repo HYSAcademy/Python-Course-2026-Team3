@@ -6,6 +6,7 @@ from botocore.exceptions import ClientError
 from app.core.config import settings
 from app.core.logger import logger
 from app.core.exceptions import register_exception_handlers
+from app.api.endpoints import router as archives_router
 
 
 async def _ensure_bucket_exists(client) -> None:
@@ -46,4 +47,5 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Archive API", lifespan=lifespan)
 
+app.include_router(archives_router)
 register_exception_handlers(app)

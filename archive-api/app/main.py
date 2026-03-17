@@ -40,7 +40,8 @@ async def lifespan(app: FastAPI):
         
         await _ensure_bucket_exists(client)
             
-        yield {"s3_client": client}
+        app.state.s3_client = client
+        yield
         
     logger.info("Server shutting down! S3 client closed")
 

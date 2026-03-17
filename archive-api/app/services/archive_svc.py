@@ -71,10 +71,15 @@ class ArchiveService:
                 logger.debug(traceback.format_exc())
                 
                 if uploaded_to_s3:
-                    await self.s3_service.delete_file(s3_object_name)
-                    
-                await repo.update_status(archive_id, ArchiveStatus.FAILED, error_message=str(e))
-                await session.commit()
+                    try:
+                        await self.s3_service.delete_file(s3_object_name)
+                    except Exception as s3_err:
+                        logger.warning(f"Failed to cleanup S3 object {s3_object_name}: {s3_err}")
+                try:
+                    await repo.update_status(archive_id, ArchiveStatus.FAILED, error_message=str(e))
+                    await session.commit()
+                except Exception as db_err:
+                    logger.critical(f"Failed to update status in DB for {archive_id}: {db_err}")
                 
     def get_full_s3_url(self, s3_object_name: str) -> str:
         """Helper method for GET endpoint: builds URL dynamically."""

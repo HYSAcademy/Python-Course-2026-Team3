@@ -10,6 +10,7 @@ README.md
 docs/
 .pytest_cache
 
+logs/
 .env
 
 *.log

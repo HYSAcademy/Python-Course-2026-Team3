@@ -1,11 +1,18 @@
 import zipfile
 import tarfile
 from typing import Generator, IO, Protocol
+from pathlib import Path
 
 from app.core.logger import logger
 from app.schemas.contracts import ParsedDocument
+from app.core.config import settings
 
-MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  
+MAX_FILE_SIZE_BYTES = settings.max_extract_size_mb * 1024 * 1024
+
+ALLOWED_TEXT_EXTENSIONS = {
+    '.txt', '.csv', '.json', '.md', '.xml', 
+    '.html', '.py', '.js', '.css', '.log'
+}
 
 class IExtractor(Protocol):
     """Interface for all archive extractors. All new formats must adhere to it."""
@@ -26,6 +33,11 @@ class ZipExtractor:
                     
                 if info.file_size > MAX_FILE_SIZE_BYTES:
                     logger.error(f"File {info.filename} is too large ({info.file_size} bytes). Skipping.")
+                    continue
+
+                file_extension = Path(info.filename).suffix.lower()
+                if file_extension not in ALLOWED_TEXT_EXTENSIONS:
+                    logger.info(f"Skipping non-text file based on extension: {info.filename}")
                     continue
 
                 with z.open(info) as f:
@@ -50,6 +62,11 @@ class TarExtractor:
                     
                 if member.size > MAX_FILE_SIZE_BYTES:
                     logger.error(f"File {member.name} is too large ({member.size} bytes). Skipping.")
+                    continue
+
+                file_extension = Path(member.name).suffix.lower()
+                if file_extension not in ALLOWED_TEXT_EXTENSIONS:
+                    logger.info(f"Skipping non-text file based on extension: {member.name}")
                     continue
 
                 f = tar.extractfile(member)

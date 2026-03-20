@@ -12,7 +12,7 @@ class ArchiveRepository:
 
     async def create_archive(self, archive: Archive) -> Archive:
         self.session.add(archive)
-        await self.session.flush() 
+        await self.session.flush()
         await self.session.refresh(archive)
         return archive
 

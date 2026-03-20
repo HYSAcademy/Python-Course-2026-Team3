@@ -23,40 +23,34 @@ PLAIN_FORMAT = (
 logger.remove()
 
 
-logger.add(
-    sys.stderr,
-    format=COLOR_FORMAT,
-    level="INFO",
-    colorize=True,
-    enqueue=True
-)
+logger.add(sys.stderr, format=COLOR_FORMAT, level="INFO", colorize=True, enqueue=True)
 
 
 logger.add(
     LOG_DIR / "app.log",
-    format=PLAIN_FORMAT, 
+    format=PLAIN_FORMAT,
     level="INFO",
-    colorize=False,          
-    rotation="10 MB",      
-    retention="30 days",   
-    compression="zip",     
+    colorize=False,
+    rotation="10 MB",
+    retention="30 days",
+    compression="zip",
     enqueue=True,
     backtrace=False,
-    diagnose=False
+    diagnose=False,
 )
 
 
 logger.add(
     LOG_DIR / "errors.log",
-    format=PLAIN_FORMAT, 
+    format=PLAIN_FORMAT,
     level="ERROR",
-    colorize=False,  
-    rotation="15 MB",          
+    colorize=False,
+    rotation="15 MB",
     retention="60 days",
     compression="zip",
     enqueue=True,
     backtrace=True,
-    diagnose=True
+    diagnose=True,
 )
 
 __all__ = ["logger"]

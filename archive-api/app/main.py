@@ -30,19 +30,19 @@ async def lifespan(app: FastAPI):
     """Initializing S3 client"""
     logger.info("Initializing S3 client")
     session = aioboto3.Session()
-    
+
     async with session.client(
         "s3",
         endpoint_url=settings.minio_endpoint,
         aws_access_key_id=settings.minio_root_user,
         aws_secret_access_key=settings.minio_root_password,
     ) as client:
-        
+
         await _ensure_bucket_exists(client)
-            
+
         app.state.s3_client = client
         yield
-        
+
     logger.info("Server shutting down! S3 client closed")
 
 

@@ -16,7 +16,9 @@ async def test_upload_archive_success(mocker):
     app.state.s3_client = MagicMock()
     mocker.patch.object(ArchiveRepository, "create_archive", new_callable=AsyncMock)
     mocker.patch.object(AsyncSession, "commit", new_callable=AsyncMock)
-    mocker.patch.object(ArchiveService, "process_archive_background", new_callable=AsyncMock)
+    mocker.patch.object(
+        ArchiveService, "process_archive_background", new_callable=AsyncMock
+    )
     fake_zip_content = b"PK\x03\x04...fake_zip_data..."
     files = {"file": ("test_archive.zip", fake_zip_content, "application/zip")}
 
@@ -34,7 +36,7 @@ async def test_upload_archive_success(mocker):
 @pytest.mark.asyncio
 async def test_get_archive_status_success(mocker):
     """Test retrieving archive status (returns 200 OK)."""
-    
+
     app.state.s3_client = MagicMock()
     fake_archive = MagicMock()
     fake_archive.id = "fake-uuid-123"
@@ -47,13 +49,13 @@ async def test_get_archive_status_success(mocker):
         ArchiveRepository,
         "get_archive_by_id",
         return_value=fake_archive,
-        new_callable=AsyncMock
+        new_callable=AsyncMock,
     )
 
     mocker.patch.object(
         ArchiveService,
         "get_full_s3_url",
-        return_value="http://fake-minio/archives/fake.zip"
+        return_value="http://fake-minio/archives/fake.zip",
     )
 
     transport = ASGITransport(app=app)

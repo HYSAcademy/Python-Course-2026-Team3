@@ -4,6 +4,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # Database
     database_url: str
+    database_url_pgbouncer: str
+    redis_url: str = "redis://redis:6379/0"
 
     # MinIO / S3
     minio_endpoint: str

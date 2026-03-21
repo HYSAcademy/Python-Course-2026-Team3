@@ -1,4 +1,13 @@
-from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Request, Depends, HTTPException, status
+from fastapi import (
+    APIRouter,
+    UploadFile,
+    File,
+    BackgroundTasks,
+    Request,
+    Depends,
+    HTTPException,
+    status,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logger import logger
@@ -7,62 +16,67 @@ from app.db.database import get_db
 from app.models.archive import Archive
 from app.repositories.archive_repo import ArchiveRepository
 from app.schemas.contracts import (
-    ArchiveStatus, 
-    ArchiveUploadResponse, 
-    ArchiveDetailResponse
+    ArchiveStatus,
+    ArchiveUploadResponse,
+    ArchiveDetailResponse,
 )
 
 router = APIRouter(tags=["Archives"])
 
-@router.post("/upload-archives/", status_code=status.HTTP_202_ACCEPTED, response_model=ArchiveUploadResponse)
+
+@router.post(
+    "/upload-archives/",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ArchiveUploadResponse,
+)
 async def upload_archive_endpoint(
     request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    session: AsyncSession = Depends(get_db) 
+    session: AsyncSession = Depends(get_db),
 ):
-    if not file.filename.endswith(('.zip', '.tar.gz', '.tgz')):
+    if not file.filename.endswith((".zip", ".tar.gz", ".tgz")):
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Unsupported file type. Only .zip and .tar.gz are allowed."
+            detail="Unsupported file type. Only .zip and .tar.gz are allowed.",
         )
 
-    file_bytes = await file.read()  
+    file_bytes = await file.read()
     archive_id, s3_object_name = ArchiveService.generate_archive_metadata(file.filename)
-    
+
     repo = ArchiveRepository(session)
     new_archive = Archive(
         id=archive_id,
         filename=file.filename,
         s3_object_name=s3_object_name,
-        status=ArchiveStatus.PENDING
+        status=ArchiveStatus.PENDING,
     )
-    await repo.create_archive(new_archive)   
+    await repo.create_archive(new_archive)
     await session.commit()
-    
+
     s3_client = request.app.state.s3_client
     archive_svc = ArchiveService(s3_client=s3_client)
-    
+
     background_tasks.add_task(
         archive_svc.process_archive_background,
         archive_id=archive_id,
         filename=file.filename,
         file_bytes=file_bytes,
-        s3_object_name=s3_object_name 
+        s3_object_name=s3_object_name,
     )
-    
+
     return ArchiveUploadResponse(
         archive_id=archive_id,
         filename=file.filename,
         status=ArchiveStatus.PENDING,
-        message="Archive is being processed in the background."
+        message="Archive is being processed in the background.",
     )
+
 
 @router.get("/archives/{archive_id}", response_model=ArchiveDetailResponse)
 async def get_archive_status(
-    archive_id: str,
-    request: Request,
-    session: AsyncSession = Depends(get_db)):
+    archive_id: str, request: Request, session: AsyncSession = Depends(get_db)
+):
     """
     Returns archive processing status.
     If COMPLETED — returns list of files.
@@ -70,11 +84,11 @@ async def get_archive_status(
     """
     repo = ArchiveRepository(session)
     archive = await repo.get_archive_by_id(archive_id)
-    
+
     if not archive:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Archive with ID {archive_id} not found."
+            detail=f"Archive with ID {archive_id} not found.",
         )
 
     s3_client = request.app.state.s3_client
@@ -85,6 +99,10 @@ async def get_archive_status(
         archive_id=archive.id,
         status=archive.status,
         s3_url=full_s3_url,
-        error_message=archive.error_message if archive.status == ArchiveStatus.FAILED else None,
-        extracted_files=archive.extracted_files if archive.status == ArchiveStatus.COMPLETED else []
+        error_message=(
+            archive.error_message if archive.status == ArchiveStatus.FAILED else None
+        ),
+        extracted_files=(
+            archive.extracted_files if archive.status == ArchiveStatus.COMPLETED else []
+        ),
     )

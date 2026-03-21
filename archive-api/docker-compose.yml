@@ -1,4 +1,103 @@
 services:
+  nginx:
+    image: nginx:alpine
+    container_name: archive_nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+
+  api:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: archive_fastapi
+    restart: always
+    expose:
+      - "8000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL_PGBOUNCER: ${DATABASE_URL_PGBOUNCER}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME}
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB}
+      MAX_EXTRACT_SIZE_MB: ${MAX_EXTRACT_SIZE_MB}
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_started
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"
+
+  worker:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: archive_worker
+    restart: always
+    environment:
+      DATABASE_URL_PGBOUNCER: ${DATABASE_URL_PGBOUNCER}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME}
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_started
+      minio:
+        condition: service_healthy
+    command: sleep infinity
+    # command: >
+    #  sh -c "celery -A app.core.celery_app worker --loglevel=info --concurrency=2"
+
+  redis:
+    image: redis:7-alpine
+    container_name: archive_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.24.1-p0
+    container_name: archive_pgbouncer
+    restart: always
+    environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - MAX_CLIENT_CONN=1000
+      - DEFAULT_POOL_SIZE=20
+      - POOL_MODE=transaction
+      - IGNORE_STARTUP_PARAMETERS=extra_float_digits
+      - AUTH_TYPE=scram-sha-256
+    ports:
+      - "6432:5432"
+    depends_on:
+      db:
+        condition: service_healthy
+
   db:
     image: postgres:15-alpine
     container_name: archive_postgres
@@ -35,33 +134,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
-  api:
-    build: 
-      context: .
-      dockerfile: Dockerfile
-    container_name: archive_fastapi
-    restart: always
-    ports:
-      - "8000:8000"
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME}
-      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB}
-      MAX_EXTRACT_SIZE_MB: ${MAX_EXTRACT_SIZE_MB}
-    volumes:
-      - ./logs:/app/logs
-    depends_on:
-      db:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    command: >
-      sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
 volumes:
   postgres_data:

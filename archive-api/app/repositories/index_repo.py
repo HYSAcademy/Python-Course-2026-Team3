@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-
+from fastapi import Depends
+from app.db.database import get_db
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -120,3 +121,9 @@ class PgIndexRepository(IIndexRepository):
             {"archive_id": row[0], "filename": row[1], "score": float(row[2])}
             for row in rows
         ]
+
+
+async def get_index_repo(
+    session: AsyncSession = Depends(get_db),
+) -> PgIndexRepository:
+    return PgIndexRepository(session)

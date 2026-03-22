@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logger import logger
 from app.services.archive_svc import ArchiveService
 from app.core.config import settings
+from app.services.validation_service import ValidationService, ValidationError
+from app.services.validators import SizeValidator, MimeTypeValidator, SecurityValidator
 from app.db.database import get_db
 from app.models.archive import Archive
 from app.repositories.archive_repo import ArchiveRepository
@@ -110,6 +112,10 @@ async def get_archive_status(
         archive_id=archive.id,
         status=archive.status,
         s3_url=full_s3_url,
-        error_message=archive.error_message if archive.status == ArchiveStatus.FAILED else None,
-        extracted_files=archive.extracted_files if archive.status == ArchiveStatus.COMPLETED else [],
+        error_message=(
+            archive.error_message if archive.status == ArchiveStatus.FAILED else None
+        ),
+        extracted_files=(
+            archive.extracted_files if archive.status == ArchiveStatus.COMPLETED else []
+        ),
     )

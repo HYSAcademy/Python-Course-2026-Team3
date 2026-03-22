@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-
 from fastapi import Depends
 from sqlalchemy import select, Float
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -61,7 +60,6 @@ class PgIndexRepository(IIndexRepository):
     async def bulk_upsert_indices(self, records: list[dict]) -> None:
         """
         Bulk upsert — one query for all documents.
-        Each record: {"archive_id": ..., "filename": ..., "scores": {...}}
         """
         if not records:
             return
@@ -94,18 +92,20 @@ class PgIndexRepository(IIndexRepository):
     ) -> list[dict]:
         """
         Search documents containing a word using GIN index.
-        Returns top N documents sorted by score descending.
         """
+        score_column = WordIndex.scores[word].astext.cast(Float)
+        
         stmt = (
             select(
                 WordIndex.archive_id,
                 WordIndex.filename,
-                WordIndex.scores[word].astext.cast(Float).label("score"),
+                score_column.label("score"),
             )
             .where(WordIndex.scores.has_key(word))
-            .order_by(WordIndex.scores[word].astext.cast(Float).desc())
+            .order_by(score_column.desc())
             .limit(limit)
         )
+        
         result = await self.session.execute(stmt)
         rows = result.fetchall()
         

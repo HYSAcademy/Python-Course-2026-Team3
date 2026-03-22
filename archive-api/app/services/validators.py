@@ -1,6 +1,5 @@
 import zipfile
 import os
-
 from fastapi import UploadFile
 
 from app.core.config import settings
@@ -34,10 +33,8 @@ class SizeValidator(IFileValidator):
                 status_code=413, 
             )
 
-
 class MimeTypeValidator(IFileValidator):
     """Rejects files with unsupported extensions or content types."""
-
     async def validate(self, file: UploadFile) -> None:
         filename = file.filename or ""
 
@@ -60,7 +57,6 @@ class SecurityValidator(IFileValidator):
     Zip Bomb protection — checks compression ratio before full extraction.
     Only applies to .zip files.
     """
-
     async def validate(self, file: UploadFile) -> None:
         filename = file.filename or ""
         if not filename.endswith(".zip"):
@@ -70,6 +66,7 @@ class SecurityValidator(IFileValidator):
 
         try:
             with zipfile.ZipFile(file.file) as zf:
+
                 total_uncompressed = sum(
                     info.file_size for info in zf.infolist()
                 )

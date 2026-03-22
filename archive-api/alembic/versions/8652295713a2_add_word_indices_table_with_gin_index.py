@@ -25,9 +25,10 @@ def upgrade() -> None:
         sa.Column('archive_id', sa.String(), nullable=False),
         sa.Column('filename', sa.String(), nullable=False),
         sa.Column('scores', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.ForeignKeyConstraint(['archive_id'], ['archives.id'], ondelete='CASCADE'), # <--- ДОДАНО ТУТ
+        sa.ForeignKeyConstraint(['archive_id'], ['archives.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
+    
     op.create_index('ix_word_index_archive_filename', 'word_indices', ['archive_id', 'filename'], unique=True)
     op.create_index('ix_word_index_scores_gin', 'word_indices', ['scores'], unique=False, postgresql_using='gin')
     op.drop_constraint('extracted_files_archive_id_fkey', 'extracted_files', type_='foreignkey')
@@ -47,6 +48,7 @@ def downgrade() -> None:
         source_table='extracted_files', referent_table='archives',
         local_cols=['archive_id'], remote_cols=['id']
     )
+    
     op.drop_index('ix_word_index_scores_gin', table_name='word_indices', postgresql_using='gin')
     op.drop_index('ix_word_index_archive_filename', table_name='word_indices')
     op.drop_table('word_indices')

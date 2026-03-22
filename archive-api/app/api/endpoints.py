@@ -2,7 +2,6 @@ from fastapi import (
     APIRouter,
     UploadFile,
     File,
-    BackgroundTasks,
     Request,
     Depends,
     HTTPException,
@@ -12,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logger import logger
 from app.services.archive_svc import ArchiveService
+from app.core.config import settings
 from app.db.database import get_db
 from app.models.archive import Archive
 from app.repositories.archive_repo import ArchiveRepository
@@ -20,8 +20,10 @@ from app.schemas.contracts import (
     ArchiveUploadResponse,
     ArchiveDetailResponse,
 )
+from app.worker.tasks import process_archive_task
 
 router = APIRouter(tags=["Archives"])
+ALLOWED_EXTENSIONS = (".zip", ".tar.gz", ".tgz")
 
 
 @router.post(
@@ -31,19 +33,19 @@ router = APIRouter(tags=["Archives"])
 )
 async def upload_archive_endpoint(
     request: Request,
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_db),
 ):
-    if not file.filename.endswith((".zip", ".tar.gz", ".tgz")):
+    """
+    Accepts an archive, creates a record in the database, 
+    streams it to S3, and enqueues a task in Celery for processing.
+    """
+    if not file.filename.endswith(ALLOWED_EXTENSIONS):
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Unsupported file type. Only .zip and .tar.gz are allowed.",
+            detail=f"Unsupported file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
         )
-
-    file_bytes = await file.read()
     archive_id, s3_object_name = ArchiveService.generate_archive_metadata(file.filename)
-
     repo = ArchiveRepository(session)
     new_archive = Archive(
         id=archive_id,
@@ -56,20 +58,28 @@ async def upload_archive_endpoint(
 
     s3_client = request.app.state.s3_client
     archive_svc = ArchiveService(s3_client=s3_client)
-
-    background_tasks.add_task(
-        archive_svc.process_archive_background,
-        archive_id=archive_id,
-        filename=file.filename,
-        file_bytes=file_bytes,
-        s3_object_name=s3_object_name,
-    )
+    
+    try:
+        await archive_svc.upload_stream_to_s3(s3_object_name, file)
+        
+    except Exception as e:
+        logger.error(f"Error uploading archive {archive_id} to MinIO: {e}")
+        await repo.update_status(archive_id, ArchiveStatus.FAILED, str(e))
+        await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail="Failed to securely upload file to object storage."
+        )
+    
+    process_archive_task.delay(str(archive_id))
+    
+    logger.info(f"Archive {archive_id} successfully saved to S3. Task sent to Celery.")
 
     return ArchiveUploadResponse(
         archive_id=archive_id,
         filename=file.filename,
         status=ArchiveStatus.PENDING,
-        message="Archive is being processed in the background.",
+        message="Archive is successfully uploaded to S3 and queued for background processing.",
     )
 
 
@@ -93,16 +103,13 @@ async def get_archive_status(
 
     s3_client = request.app.state.s3_client
     archive_svc = ArchiveService(s3_client=s3_client)
-    full_s3_url = archive_svc.get_full_s3_url(archive.s3_object_name)
+    
+    full_s3_url = archive_svc.get_full_s3_url(archive.s3_object_name) if archive.s3_object_name else None
 
     return ArchiveDetailResponse(
         archive_id=archive.id,
         status=archive.status,
         s3_url=full_s3_url,
-        error_message=(
-            archive.error_message if archive.status == ArchiveStatus.FAILED else None
-        ),
-        extracted_files=(
-            archive.extracted_files if archive.status == ArchiveStatus.COMPLETED else []
-        ),
+        error_message=archive.error_message if archive.status == ArchiveStatus.FAILED else None,
+        extracted_files=archive.extracted_files if archive.status == ArchiveStatus.COMPLETED else [],
     )

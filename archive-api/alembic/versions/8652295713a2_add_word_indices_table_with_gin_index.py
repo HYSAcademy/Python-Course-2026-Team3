@@ -1,0 +1,52 @@
+"""add word_indices table with gin index and cascade deletes
+
+Revision ID: 8652295713a2
+Revises: 5953180d07e2
+Create Date: 2026-03-22 12:42:52.517333
+
+"""
+from typing import Sequence, Union
+
+from alembic import op
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
+
+# revision identifiers, used by Alembic.
+revision: str = '8652295713a2'
+down_revision: Union[str, Sequence[str], None] = '5953180d07e2'
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    """Upgrade schema."""
+    op.create_table('word_indices',
+        sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column('archive_id', sa.String(), nullable=False),
+        sa.Column('filename', sa.String(), nullable=False),
+        sa.Column('scores', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.ForeignKeyConstraint(['archive_id'], ['archives.id'], ondelete='CASCADE'), # <--- ДОДАНО ТУТ
+        sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index('ix_word_index_archive_filename', 'word_indices', ['archive_id', 'filename'], unique=True)
+    op.create_index('ix_word_index_scores_gin', 'word_indices', ['scores'], unique=False, postgresql_using='gin')
+    op.drop_constraint('extracted_files_archive_id_fkey', 'extracted_files', type_='foreignkey')
+    op.create_foreign_key(
+        'extracted_files_archive_id_fkey',
+        source_table='extracted_files', referent_table='archives',
+        local_cols=['archive_id'], remote_cols=['id'],
+        ondelete='CASCADE'
+    )
+
+
+def downgrade() -> None:
+    """Downgrade schema."""
+    op.drop_constraint('extracted_files_archive_id_fkey', 'extracted_files', type_='foreignkey')
+    op.create_foreign_key(
+        'extracted_files_archive_id_fkey',
+        source_table='extracted_files', referent_table='archives',
+        local_cols=['archive_id'], remote_cols=['id']
+    )
+    op.drop_index('ix_word_index_scores_gin', table_name='word_indices', postgresql_using='gin')
+    op.drop_index('ix_word_index_archive_filename', table_name='word_indices')
+    op.drop_table('word_indices')

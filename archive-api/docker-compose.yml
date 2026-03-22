@@ -34,7 +34,7 @@ services:
       db:
         condition: service_healthy
       pgbouncer:
-        condition: service_started
+        condition: service_healthy 
       minio:
         condition: service_healthy
       redis:
@@ -47,9 +47,11 @@ services:
     build: 
       context: .
       dockerfile: Dockerfile
-    container_name: archive_worker
     restart: always
+    env_file:
+      - .env
     environment:
+      DATABASE_URL: ${DATABASE_URL}
       DATABASE_URL_PGBOUNCER: ${DATABASE_URL_PGBOUNCER}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT}
@@ -62,19 +64,16 @@ services:
       redis:
         condition: service_healthy
       pgbouncer:
-        condition: service_started
+        condition: service_healthy 
       minio:
         condition: service_healthy
-    command: sleep infinity
-    # command: >
-    #  sh -c "celery -A app.core.celery_app worker --loglevel=info --concurrency=2"
+    command: >
+      sh -c "celery -A app.core.celery_app worker --loglevel=info --concurrency=1"
 
   redis:
     image: redis:7-alpine
     container_name: archive_redis
     restart: always
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -92,11 +91,19 @@ services:
       - POOL_MODE=transaction
       - IGNORE_STARTUP_PARAMETERS=extra_float_digits
       - AUTH_TYPE=scram-sha-256
+      - LOG_CONNECTIONS=0
+      - LOG_DISCONNECTIONS=0
+      - LOG_STATS=0
     ports:
       - "6432:5432"
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   db:
     image: postgres:15-alpine
@@ -106,8 +113,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

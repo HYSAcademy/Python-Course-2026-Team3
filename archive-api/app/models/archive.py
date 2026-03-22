@@ -4,6 +4,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
 from app.schemas.contracts import ArchiveStatus
+from app.models.word_index import WordIndex
 
 
 class Archive(Base):
@@ -25,6 +26,14 @@ class Archive(Base):
         "ExtractedFile",
         back_populates="archive",
         lazy="raise",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    
+    word_indices: Mapped[list["WordIndex"]] = relationship(
+        WordIndex,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
 
@@ -33,8 +42,9 @@ class ExtractedFile(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     archive_id: Mapped[str] = mapped_column(
-        String, ForeignKey("archives.id"), nullable=False
+        String, ForeignKey("archives.id", ondelete="CASCADE"), nullable=False
     )
+    
     file_name: Mapped[str] = mapped_column(String, nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)

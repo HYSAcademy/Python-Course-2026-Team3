@@ -7,6 +7,7 @@ from alembic import context
 from app.core.config import settings
 from app.db.database import Base
 from app.models import archive
+from app.models import word_index
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

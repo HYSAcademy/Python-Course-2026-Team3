@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logger import logger
 from app.services.archive_svc import ArchiveService
+from app.services.validation_service import ValidationService, ValidationError
+from app.services.validators import SizeValidator, MimeTypeValidator, SecurityValidator
 from app.db.database import get_db
 from app.models.archive import Archive
 from app.repositories.archive_repo import ArchiveRepository
@@ -35,13 +37,19 @@ async def upload_archive_endpoint(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_db),
 ):
-    if not file.filename.endswith((".zip", ".tar.gz", ".tgz")):
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Unsupported file type. Only .zip and .tar.gz are allowed.",
-        )
-
     file_bytes = await file.read()
+
+    validation_service = ValidationService(validators=[
+        SizeValidator(),
+        MimeTypeValidator(),
+        SecurityValidator(),
+    ])
+
+    try:
+        await validation_service.validate(file, file_bytes)
+    except ValidationError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+
     archive_id, s3_object_name = ArchiveService.generate_archive_metadata(file.filename)
 
     repo = ArchiveRepository(session)

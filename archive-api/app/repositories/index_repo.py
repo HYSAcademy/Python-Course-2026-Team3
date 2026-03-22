@@ -1,10 +1,12 @@
 from abc import ABC, abstractmethod
 from fastapi import Depends
 from app.db.database import get_db
-from sqlalchemy import text
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logger import logger
+from app.models.word_index import WordIndex
 
 
 class IIndexRepository(ABC):
@@ -44,15 +46,15 @@ class PgIndexRepository(IIndexRepository):
         self, archive_id: str, filename: str, scores: dict
     ) -> None:
         """Insert or update a single document index."""
-        await self.session.execute(
-            text("""
-                INSERT INTO word_indices (archive_id, filename, scores)
-                VALUES (:archive_id, :filename, :scores::jsonb)
-                ON CONFLICT (archive_id, filename)
-                DO UPDATE SET scores = EXCLUDED.scores
-            """),
-            {"archive_id": archive_id, "filename": filename, "scores": scores},
+        stmt = (
+            pg_insert(WordIndex)
+            .values(archive_id=archive_id, filename=filename, scores=scores)
+            .on_conflict_do_update(
+                index_elements=["archive_id", "filename"],
+                set_={"scores": scores},
+            )
         )
+        await self.session.execute(stmt)
         await self.session.flush()
 
     async def bulk_upsert_indices(self, records: list[dict]) -> None:
@@ -63,25 +65,15 @@ class PgIndexRepository(IIndexRepository):
         if not records:
             return
 
-        values_clause = ", ".join(
-            f"(:archive_id_{i}, :filename_{i}, :scores_{i}::jsonb)"
-            for i in range(len(records))
+        stmt = (
+            pg_insert(WordIndex)
+            .values(records)
+            .on_conflict_do_update(
+                index_elements=["archive_id", "filename"],
+                set_={"scores": pg_insert(WordIndex).excluded.scores},
+            )
         )
-        params = {}
-        for i, record in enumerate(records):
-            params[f"archive_id_{i}"] = record["archive_id"]
-            params[f"filename_{i}"] = record["filename"]
-            params[f"scores_{i}"] = record["scores"]
-
-        await self.session.execute(
-            text(f"""
-                INSERT INTO word_indices (archive_id, filename, scores)
-                VALUES {values_clause}
-                ON CONFLICT (archive_id, filename)
-                DO UPDATE SET scores = EXCLUDED.scores
-            """),
-            params,
-        )
+        await self.session.execute(stmt)
         await self.session.flush()
         logger.info(f"Bulk upserted {len(records)} index records.")
 
@@ -90,11 +82,10 @@ class PgIndexRepository(IIndexRepository):
     ) -> dict | None:
         """Get index for a specific file."""
         result = await self.session.execute(
-            text("""
-                SELECT scores FROM word_indices
-                WHERE archive_id = :archive_id AND filename = :filename
-            """),
-            {"archive_id": archive_id, "filename": filename},
+            select(WordIndex.scores).where(
+                WordIndex.archive_id == archive_id,
+                WordIndex.filename == filename,
+            )
         )
         row = result.fetchone()
         return row[0] if row else None
@@ -106,19 +97,24 @@ class PgIndexRepository(IIndexRepository):
         Search documents containing a word using GIN index.
         Returns top N documents sorted by score descending.
         """
-        result = await self.session.execute(
-            text("""
-                SELECT archive_id, filename, scores -> :word AS score
-                FROM word_indices
-                WHERE scores ? :word
-                ORDER BY (scores -> :word)::float DESC
-                LIMIT :limit
-            """),
-            {"word": word.lower(), "limit": limit},
+        stmt = (
+            select(
+                WordIndex.archive_id,
+                WordIndex.filename,
+                WordIndex.scores[word].label("score"),
+            )
+            .where(WordIndex.scores.has_key(word))
+            .order_by(WordIndex.scores[word].desc())
+            .limit(limit)
         )
+        result = await self.session.execute(stmt)
         rows = result.fetchall()
         return [
-            {"archive_id": row[0], "filename": row[1], "score": float(row[2])}
+            {
+                "archive_id": row.archive_id,
+                "filename": row.filename,
+                "score": float(row.score),
+            }
             for row in rows
         ]
 

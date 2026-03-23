@@ -1,6 +1,6 @@
 from sqlalchemy import String, Integer, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
 
@@ -14,6 +14,11 @@ class WordIndex(Base):
     )
     filename: Mapped[str] = mapped_column(String, nullable=False)
     scores: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+    archive: Mapped["Archive"] = relationship(
+        "Archive",
+        back_populates="word_indices",
+    )
 
     __table_args__ = (
         Index("ix_word_index_scores_gin", "scores", postgresql_using="gin"),

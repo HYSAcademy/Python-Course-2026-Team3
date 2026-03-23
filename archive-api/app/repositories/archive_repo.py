@@ -49,7 +49,7 @@ class ArchiveRepository:
                         "archive_id": f.archive_id,
                         "file_name": f.file_name,
                         "size_bytes": f.size_bytes,
-                        "content": f.content,
+                        "s3_object_name": f.s3_object_name,
                     }
                     for f in files
                 ],

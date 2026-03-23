@@ -2,7 +2,6 @@ import io
 import uuid
 import re
 import traceback
-from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +10,7 @@ from fastapi import UploadFile
 from app.core.logger import logger
 from app.services.s3_service import S3Service
 from app.services.extractor import ExtractorFactory
+from app.services.scoring import ScorerFactory
 from app.schemas.contracts import ArchiveStatus
 from app.models.archive import ExtractedFile
 from app.repositories.archive_repo import ArchiveRepository
@@ -44,26 +44,11 @@ class ArchiveService:
             logger.error(f"Failed to stream upload {object_name}: {e}")
             raise e
 
-    def _calculate_word_frequencies(self, content: str | bytes) -> dict[str, int]:
-        """
-        Extracts words from text content and counts their frequencies.
-        Adheres to SRP: responsible only for text processing.
-        """
-        if isinstance(content, bytes):
-            try:
-                text_content = content.decode('utf-8')
-            except UnicodeDecodeError:
-                return {}
-        else:
-            text_content = content
-        words = re.findall(r'\b\w+\b', text_content.lower())
-        
-        return dict(Counter(words))
-
     async def process_archive(self, archive_id: str) -> None:
         """
         Called from a Celery worker.
-        Downloads the archive from MinIO into the worker's memory, extracts it, and indexes the files.
+        Downloads the archive, extracts it on-the-fly, calculates BM25 scores,
+        and streams extracted files directly back to S3.
         """
         logger.info(f"Worker started processing archive ID={archive_id}")
 
@@ -88,33 +73,35 @@ class ArchiveService:
                 logger.info(f"Extracting contents of {archive.filename}...")
                 extractor = ExtractorFactory.get_extractor(archive.filename)
                 
+                scorer = ScorerFactory.get_scorer("bm25")
+                
                 db_extracted_files = []
                 db_word_indices = []
                 
                 for doc in extractor.extract(file_obj):
-                    
-                    logger.info(f"Successfully extracted valid file: {doc.original_filename} ({doc.file_size} bytes)")
+                    logger.info(f"On-the-fly processing: {doc.original_filename} ({doc.file_size} bytes)")
+                    word_scores = scorer.calculate_scores(doc.content)
+                    if word_scores:
+                        db_word_indices.append(
+                            WordIndex(
+                                archive_id=archive_id,
+                                filename=doc.original_filename,
+                                scores=word_scores
+                            )
+                        )
+
+                    extracted_s3_key = f"extracted/{archive_id}/{doc.original_filename}"
+                    doc_stream = io.BytesIO(doc.content.encode('utf-8'))
+                    await self.s3_service.upload_archive(doc_stream, extracted_s3_key)
 
                     db_extracted_files.append(
                         ExtractedFile(
                             archive_id=archive_id,
                             file_name=doc.original_filename,
                             size_bytes=doc.file_size,
-                            content=doc.content,
+                            s3_object_name=extracted_s3_key 
                         )
                     )
-
-                    word_counts = self._calculate_word_frequencies(doc.content)
-                    
-                    if word_counts:
-                        db_word_indices.append(
-                            WordIndex(
-                                archive_id=archive_id,
-                                filename=doc.original_filename,
-                                scores=word_counts
-                            )
-                        )
-
                 if db_extracted_files:
                     await repo.save_extracted_files(db_extracted_files)
                 
@@ -124,7 +111,7 @@ class ArchiveService:
                 await repo.update_status(archive_id, ArchiveStatus.COMPLETED)
                 await session.commit()
                 
-                logger.info(f"Archive ID={archive_id} successfully extracted and indexed!")
+                logger.info(f"Archive ID={archive_id} successfully extracted, BM25 indexed, and uploaded to S3!")
 
             except Exception as e:
                 await session.rollback()

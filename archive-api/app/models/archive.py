@@ -31,7 +31,8 @@ class Archive(Base):
     )
     
     word_indices: Mapped[list["WordIndex"]] = relationship(
-        WordIndex,
+        "WordIndex",
+        back_populates="archive",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
@@ -47,7 +48,7 @@ class ExtractedFile(Base):
     
     file_name: Mapped[str] = mapped_column(String, nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
+    s3_object_name: Mapped[str] = mapped_column(String, nullable=False)
 
     archive: Mapped["Archive"] = relationship(
         "Archive",

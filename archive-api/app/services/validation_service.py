@@ -12,11 +12,17 @@ class ValidationError(Exception):
 
 
 class IFileValidator(ABC):
-    """Abstract base class for all file validators (Chain of Responsibility)."""
+    """
+    Abstract base class for all file validators (Pipeline / Chain of Responsibility).
+    """
 
     @abstractmethod
-    async def validate(self, file: UploadFile, file_bytes: bytes) -> None:
-        """Raise ValidationError if validation fails."""
+    async def validate(self, file: UploadFile) -> None:
+        """
+        Raise ValidationError if validation fails.
+        Note: Implementations must operate on the file stream directly 
+        (e.g., using file.file.seek) to avoid memory leaks.
+        """
         ...
 
 
@@ -29,7 +35,8 @@ class ValidationService:
     def __init__(self, validators: list[IFileValidator]) -> None:
         self._validators = validators
 
-    async def validate(self, file: UploadFile, file_bytes: bytes) -> None:
+    async def validate(self, file: UploadFile) -> None:
         for validator in self._validators:
-            logger.debug(f"Running {validator.__class__.__name__} on '{file.filename}'")
-            await validator.validate(file, file_bytes)
+            logger.debug(f"Running {validator.__class__.__name__} on '{file.filename}'")      
+            await validator.validate(file)
+            file.file.seek(0)

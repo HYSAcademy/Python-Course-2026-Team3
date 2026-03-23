@@ -1,6 +1,5 @@
 import zipfile
-import io
-
+import os
 from fastapi import UploadFile
 
 from app.core.config import settings
@@ -21,20 +20,22 @@ ALLOWED_EXTENSIONS = {".zip", ".tar.gz", ".tgz"}
 class SizeValidator(IFileValidator):
     """Rejects files that exceed the configured upload size limit."""
 
-    async def validate(self, file: UploadFile, file_bytes: bytes) -> None:
+    async def validate(self, file: UploadFile) -> None:
+        file.file.seek(0, os.SEEK_END)
+        file_size = file.file.tell()
+        file.file.seek(0) 
+
         max_bytes = settings.max_upload_size_mb * 1024 * 1024
-        if len(file_bytes) > max_bytes:
+        if file_size > max_bytes:
             raise ValidationError(
                 f"File '{file.filename}' exceeds the maximum allowed size "
                 f"of {settings.max_upload_size_mb} MB.",
-                status_code=400,
+                status_code=413, 
             )
-
 
 class MimeTypeValidator(IFileValidator):
     """Rejects files with unsupported extensions or content types."""
-
-    async def validate(self, file: UploadFile, file_bytes: bytes) -> None:
+    async def validate(self, file: UploadFile) -> None:
         filename = file.filename or ""
 
         if not any(filename.endswith(ext) for ext in ALLOWED_EXTENSIONS):
@@ -56,8 +57,7 @@ class SecurityValidator(IFileValidator):
     Zip Bomb protection — checks compression ratio before full extraction.
     Only applies to .zip files.
     """
-
-    async def validate(self, file: UploadFile, file_bytes: bytes) -> None:
+    async def validate(self, file: UploadFile) -> None:
         filename = file.filename or ""
         if not filename.endswith(".zip"):
             return
@@ -65,7 +65,8 @@ class SecurityValidator(IFileValidator):
         max_extract_bytes = settings.max_extract_size_mb * 1024 * 1024
 
         try:
-            with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+            with zipfile.ZipFile(file.file) as zf:
+
                 total_uncompressed = sum(
                     info.file_size for info in zf.infolist()
                 )

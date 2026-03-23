@@ -4,6 +4,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.archive import Archive, ExtractedFile
 from app.schemas.contracts import ArchiveStatus
+from app.models.word_index import WordIndex
 
 
 class ArchiveRepository:
@@ -62,3 +63,6 @@ class ArchiveRepository:
             .options(selectinload(Archive.extracted_files))
         )
         return list(result.scalars().all())
+    
+    async def save_word_indices(self, indices: list[WordIndex]) -> None:
+        self.session.add_all(indices)

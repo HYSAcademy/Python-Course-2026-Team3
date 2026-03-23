@@ -10,7 +10,7 @@ class WordIndex(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     archive_id: Mapped[str] = mapped_column(
-        String, ForeignKey("archives.id"), nullable=False
+        String, ForeignKey("archives.id", ondelete="CASCADE"), nullable=False
     )
     filename: Mapped[str] = mapped_column(String, nullable=False)
     scores: Mapped[dict] = mapped_column(JSONB, nullable=False)

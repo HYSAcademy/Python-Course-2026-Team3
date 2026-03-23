@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 from fastapi import Depends
-from app.db.database import get_db
-from sqlalchemy import select
+from sqlalchemy import select, Float
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.database import get_db
 from app.core.logger import logger
 from app.models.word_index import WordIndex
 
@@ -60,19 +60,16 @@ class PgIndexRepository(IIndexRepository):
     async def bulk_upsert_indices(self, records: list[dict]) -> None:
         """
         Bulk upsert — one query for all documents.
-        Each record: {"archive_id": ..., "filename": ..., "scores": {...}}
         """
         if not records:
             return
 
-        stmt = (
-            pg_insert(WordIndex)
-            .values(records)
-            .on_conflict_do_update(
-                index_elements=["archive_id", "filename"],
-                set_={"scores": pg_insert(WordIndex).excluded.scores},
-            )
+        stmt = pg_insert(WordIndex).values(records)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["archive_id", "filename"],
+            set_={"scores": stmt.excluded.scores},
         )
+        
         await self.session.execute(stmt)
         await self.session.flush()
         logger.info(f"Bulk upserted {len(records)} index records.")
@@ -95,20 +92,23 @@ class PgIndexRepository(IIndexRepository):
     ) -> list[dict]:
         """
         Search documents containing a word using GIN index.
-        Returns top N documents sorted by score descending.
         """
+        score_column = WordIndex.scores[word].astext.cast(Float)
+        
         stmt = (
             select(
                 WordIndex.archive_id,
                 WordIndex.filename,
-                WordIndex.scores[word].label("score"),
+                score_column.label("score"),
             )
             .where(WordIndex.scores.has_key(word))
-            .order_by(WordIndex.scores[word].desc())
+            .order_by(score_column.desc())
             .limit(limit)
         )
+        
         result = await self.session.execute(stmt)
         rows = result.fetchall()
+        
         return [
             {
                 "archive_id": row.archive_id,

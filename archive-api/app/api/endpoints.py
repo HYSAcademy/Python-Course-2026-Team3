@@ -46,10 +46,11 @@ async def upload_archive_endpoint(
     streams it to S3, and enqueues a task in Celery for processing.
     """
     try:
-        validator_svc = ValidationService()
-        validator_svc.add_validator(MimeTypeValidator())
-        validator_svc.add_validator(SizeValidator())
-        validator_svc.add_validator(SecurityValidator())
+        validator_svc = ValidationService(validators=[
+            MimeTypeValidator(),
+            SizeValidator(),
+            SecurityValidator()
+        ])
         
         await validator_svc.validate(file)
         

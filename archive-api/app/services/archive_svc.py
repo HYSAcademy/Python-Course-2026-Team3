@@ -128,7 +128,22 @@ class ArchiveService:
                 await session.rollback()
                 logger.error(f"Extraction failed for archive ID={archive_id}: {e}")
                 logger.debug(traceback.format_exc())
-                raise e 
+                
+                if db_extracted_files:
+                    logger.info("Initiating S3 rollback for orphaned files...")
+                    for f in db_extracted_files:
+                        try:
+                            await self.s3_service.delete_file(f.s3_object_name)
+                        except Exception as delete_err:
+                            logger.error(f"Failed to delete orphaned file {f.s3_object_name}: {delete_err}")
+
+                try:
+                    await repo.update_status(archive_id, ArchiveStatus.FAILED, error_message=str(e))
+                    await session.commit()
+                except Exception as db_err:
+                    logger.error(f"Failed to set FAILED status in DB: {db_err}")
+
+                raise e
 
     def get_full_s3_url(self, s3_object_name: str) -> str:
         """Helper method for GET endpoint: builds URL dynamically."""

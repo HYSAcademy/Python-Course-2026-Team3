@@ -45,11 +45,19 @@ async def upload_archive_endpoint(
     Accepts an archive, creates a record in the database, 
     streams it to S3, and enqueues a task in Celery for processing.
     """
-    if not file.filename.endswith(ALLOWED_EXTENSIONS):
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Unsupported file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
-        )
+    try:
+        validator_svc = ValidationService()
+        validator_svc.add_validator(MimeTypeValidator())
+        validator_svc.add_validator(SizeValidator())
+        validator_svc.add_validator(SecurityValidator())
+        
+        await validator_svc.validate(file)
+        
+    except ValidationError as e:
+        logger.warning(f"Validation failed for {file.filename}: {e}")
+        status_code = getattr(e, 'status_code', status.HTTP_400_BAD_REQUEST)
+        raise HTTPException(status_code=status_code, detail=str(e))
+    
     archive_id, s3_object_name = ArchiveService.generate_archive_metadata(file.filename)
     repo = ArchiveRepository(session)
     new_archive = Archive(

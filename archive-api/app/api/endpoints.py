@@ -21,6 +21,9 @@ from app.schemas.contracts import (
     ArchiveStatus,
     ArchiveUploadResponse,
     ArchiveDetailResponse,
+    IndexCommandResponse,  
+    SearchQueryDTO,
+    SearchResponse,
 )
 from app.worker.tasks import process_archive_task
 
@@ -118,4 +121,62 @@ async def get_archive_status(
         extracted_files=(
             archive.extracted_files if archive.status == ArchiveStatus.COMPLETED else []
         ),
+    )
+
+@router.post(
+    "/archives/{archive_id}/index",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=IndexCommandResponse
+)
+async def trigger_archive_indexing(
+    archive_id: str,
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Manually triggers the background indexing process for an existing archive.
+    """
+    repo = ArchiveRepository(session)
+    archive = await repo.get_archive_by_id(archive_id)
+
+    if not archive:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Archive with ID {archive_id} not found."
+        )
+    await repo.update_status(archive_id, ArchiveStatus.PROCESSING, error_message=None)
+    await session.commit()
+    process_archive_task.delay(str(archive_id))
+    
+    logger.info(f"[Manual Index] Triggered processing for Archive {archive_id}.")
+
+    return IndexCommandResponse(
+        archive_id=archive_id,
+        message="Indexing task has been successfully enqueued.",
+    )
+
+
+@router.post(
+    "/search",
+    status_code=status.HTTP_200_OK,
+    response_model=SearchResponse
+)
+async def search_documents(
+    query_dto: SearchQueryDTO,
+    request: Request,
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Performs an asynchronous Search using BM25 JSONB indexes.
+    """
+    repo = ArchiveRepository(session)
+    s3_client = request.app.state.s3_client
+    archive_svc = ArchiveService(s3_client=s3_client)
+
+    search_results = await repo.search_bm25(query=query_dto.query, top_k=query_dto.top_k)
+    for result in search_results:
+        result.s3_object_name = archive_svc.get_full_s3_url(result.s3_object_name)
+
+    return SearchResponse(
+        query=query_dto.query,
+        results=search_results
     )

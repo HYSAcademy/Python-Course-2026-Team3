@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import UploadFile
+from sqlalchemy import delete
 
 from app.core.logger import logger
 from app.services.s3_service import S3Service
@@ -51,6 +52,16 @@ class ArchiveService:
         and streams extracted files directly back to S3.
         """
         logger.info(f"Worker started processing archive ID={archive_id}")
+
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                delete(ExtractedFile).where(ExtractedFile.archive_id == archive_id)
+            )
+            await session.execute(
+                delete(WordIndex).where(WordIndex.archive_id == archive_id)
+            )
+            await session.commit()
+            logger.info(f"Cleared old database records for archive {archive_id}")
 
         async with AsyncSessionLocal() as session:
             repo = ArchiveRepository(session)

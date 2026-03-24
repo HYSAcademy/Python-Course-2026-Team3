@@ -1,9 +1,10 @@
-from sqlalchemy import select
+from sqlalchemy import select, func, cast, Float
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import array
 from sqlalchemy.orm import selectinload
 
 from app.models.archive import Archive, ExtractedFile
-from app.schemas.contracts import ArchiveStatus
+from app.schemas.contracts import ArchiveStatus, SearchResultItem
 from app.models.word_index import WordIndex
 
 
@@ -66,3 +67,53 @@ class ArchiveRepository:
     
     async def save_word_indices(self, indices: list[WordIndex]) -> None:
         self.session.add_all(indices)
+
+    async def search_bm25(self, query: str, top_k: int = 10) -> list[SearchResultItem]:
+        """
+        Performs document search using BM25 weights stored in a JSONB field.
+        Uses a GIN index for instant key lookup.
+        """
+        tokens = [word.strip().lower() for word in query.split() if word.strip()]
+        
+        if not tokens:
+            return []
+
+        score_exprs = [
+            func.coalesce(cast(WordIndex.scores[token].astext, Float), 0.0)
+            for token in tokens
+        ]
+        
+        total_score = sum(score_exprs).label("total_score")
+
+        stmt = (
+            select(
+                WordIndex.archive_id,
+                WordIndex.filename,
+                ExtractedFile.s3_object_name,
+                total_score
+            )
+            .join(
+                ExtractedFile,
+                (WordIndex.archive_id == ExtractedFile.archive_id) & 
+                (WordIndex.filename == ExtractedFile.file_name)
+            )
+
+            .where(WordIndex.scores.has_any(array(tokens)))
+            .order_by(total_score.desc())
+            .limit(top_k)
+        )
+
+        result = await self.session.execute(stmt)
+        rows = result.fetchall()
+        search_results = []
+        for row in rows:
+            search_results.append(
+                SearchResultItem(
+                    archive_id=row.archive_id,
+                    filename=row.filename,
+                    s3_object_name=row.s3_object_name,
+                    score=round(row.total_score, 4)
+                )
+            )
+
+        return search_results

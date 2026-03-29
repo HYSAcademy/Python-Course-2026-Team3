@@ -9,16 +9,21 @@ from app.core.exceptions import register_exception_handlers
 from app.api.endpoints import router as archives_router
 from app.api.rag_endpoints import router as rag_router
 from app.core.s3 import get_s3_client, ensure_bucket_exists
+from app.core.redis import create_redis_pool
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Initializing S3 client")
+    app.state.redis_pool = create_redis_pool()
+    
     async with get_s3_client() as client:
         await ensure_bucket_exists(client)
         app.state.s3_client = client
         yield
-    logger.info("Server shutting down! S3 client closed")
-
+    
+    await app.state.redis_pool.aclose()
+    logger.info("Server shutting down! S3 client and Redis pool closed")
 
 app = FastAPI(title="Archive API", lifespan=lifespan)
 

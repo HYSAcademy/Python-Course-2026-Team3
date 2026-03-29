@@ -86,19 +86,25 @@ async def rag_search(
     logger.info(f"[RAG Search] Published to rag_search_requests | correlation_id={correlation_id}")
 
     try:
-        async def wait_for_response():
-            async for message in pubsub.listen():
-                if message["type"] == "message":
-                    return json.loads(message["data"])
+        deadline = asyncio.get_event_loop().time() + RAG_SEARCH_TIMEOUT
+        result = None
 
-        result = await asyncio.wait_for(wait_for_response(), timeout=RAG_SEARCH_TIMEOUT)
+        while asyncio.get_event_loop().time() < deadline:
+            message = await pubsub.get_message(
+                ignore_subscribe_messages=True,
+                timeout=1.0,
+            )
+            if message and message["type"] == "message":
+                result = json.loads(message["data"])
+                break
 
-    except asyncio.TimeoutError:
-        logger.warning(f"[RAG Search] Timeout waiting for response | correlation_id={correlation_id}")
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="RAG service did not respond in time. Please try again later.",
-        )
+        if result is None:
+            logger.warning(f"[RAG Search] Timeout | correlation_id={correlation_id}")
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="RAG service did not respond in time. Please try again later.",
+            )
+
     finally:
         await pubsub.unsubscribe(response_channel)
         await pubsub.aclose()

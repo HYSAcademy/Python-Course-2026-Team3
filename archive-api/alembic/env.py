@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import settings
 from app.db.database import Base
-from app.models import archive, word_index 
+from app.models import archive, word_index, document_chunk
 
 config = context.config
 config.set_main_option("sqlalchemy.url", str(settings.database_url))

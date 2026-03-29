@@ -72,3 +72,23 @@ class SearchResponse(BaseModel):
     """Full response for the search endpoint"""
     query: str
     results: List[SearchResultItem]
+
+
+class RagIndexResponse(BaseModel):
+    """Response for POST /rag/index/{archive_id}"""
+    archive_id: str
+    correlation_id: str
+    message: str
+
+
+class RagSearchRequest(BaseModel):
+    """Request body for POST /rag/search"""
+    query: str = Field(..., min_length=2, description="Search query")
+    top_k: int = Field(10, ge=1, le=50, description="Number of chunks to retrieve")
+
+
+class RagSearchResponse(BaseModel):
+    """Response for POST /rag/search"""
+    correlation_id: str
+    query: str
+    answer: str

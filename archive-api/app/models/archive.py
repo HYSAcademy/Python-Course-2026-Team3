@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Enum as SAEnum, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from app.models.document_chunk import DocumentChunk
 
 from app.db.database import Base
 from app.schemas.contracts import ArchiveStatus
@@ -32,6 +33,13 @@ class Archive(Base):
     
     word_indices: Mapped[list["WordIndex"]] = relationship(
         "WordIndex",
+        back_populates="archive",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    document_chunks: Mapped[list["DocumentChunk"]] = relationship(
+        "DocumentChunk",
         back_populates="archive",
         cascade="all, delete-orphan",
         passive_deletes=True,

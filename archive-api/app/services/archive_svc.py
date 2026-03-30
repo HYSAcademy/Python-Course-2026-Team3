@@ -37,7 +37,7 @@ class ArchiveService:
         """
         Streaming file upload to MinIO directly from FastAPI (Producer).
         """
-        logger.info(f"Uploading file '{object_name}' to S3 streamingly...")
+        logger.info(f"Uploading file '{object_name}' to S3 streamingly.")
         
         try:
             await self.s3_service.upload_archive(upload_file.file, object_name)

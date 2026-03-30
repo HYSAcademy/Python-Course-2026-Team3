@@ -28,7 +28,7 @@ from app.schemas.contracts import (
 from app.worker.tasks import process_archive_task
 
 router = APIRouter(tags=["Archives"])
-ALLOWED_EXTENSIONS = (".zip", ".tar.gz", ".tgz")
+
 
 
 @router.post(

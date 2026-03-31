@@ -7,7 +7,7 @@ from app.core.logger import logger
 
 @asynccontextmanager
 async def get_s3_client():
-    """Single entry point for creating the S3 client (Infrastructure Layer)."""
+    """Single entry point for creating the S3 client."""
     session = aioboto3.Session()
     async with session.client(
         "s3",

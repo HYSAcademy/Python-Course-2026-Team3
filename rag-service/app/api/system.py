@@ -4,5 +4,5 @@ router = APIRouter(tags=["System"])
 
 @router.get("/health")
 async def health_check():
-    """Ендпоінт для Docker Healthcheck"""
+    """Health check endpoint to verify that the service is running."""
     return {"status": "ok", "service": "rag-service"}

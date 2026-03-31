@@ -66,22 +66,28 @@ class LLMService:
         response = await chain.ainvoke({"context": context, "query": query})
         return response.content
 
-    async def generate_answer(self, query: str, chunks: list[str]) -> str:
+    async def generate_answer(self, query: str, chunks: list[str]) -> dict:
         """Main method to generate answer based on query and context chunks"""
         if not chunks:
-            return "Unfortunately, I could not find any information in the archive."
+            return {"answer": "Unfortunately, I could not find any information in the archive.", "contexts": []}
 
-        context_text = self._context_processor.prepare_context(chunks)
+        context_text, used_chunks = self._context_processor.prepare_context(chunks)
         
         logger.info(f"Generating answer. Context size: {self._context_processor.count_tokens(context_text)} tokens.")
 
         try:
             answer = await self._call_openai_api(context_text, query)
             logger.info("Answer successfully generated.")
-            return answer
+            return {
+                "answer": answer,
+                "contexts": used_chunks
+            } 
             
         except Exception as e:
             logger.error(f"Critical error in LLM Service: {e}", exc_info=True)
-            return "An internal error occurred. Please try again later."
+            return {
+                "answer": "An internal error occurred. Please try again later.",
+                "contexts": used_chunks
+            }
 
 llm_service = LLMService()

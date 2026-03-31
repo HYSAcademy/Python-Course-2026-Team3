@@ -1,6 +1,7 @@
 import uuid
 import asyncio
 import json
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -113,4 +114,5 @@ async def rag_search(
         correlation_id=correlation_id,
         query=request.query,
         answer=result.get("answer", ""),
+        contexts=result.get("contexts", []),
     )

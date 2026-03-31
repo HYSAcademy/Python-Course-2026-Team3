@@ -7,7 +7,7 @@ This document describes the architectural decisions, design patterns, and HighLo
 ## 📐 Design Patterns
 
 ### Repository Pattern
-All database operations are isolated in repository classes (`ArchiveRepository`, `PgIndexRepository`). Endpoints and services never write SQL directly — they call high-level methods like `create_archive()` or `bulk_upsert_indices()`.
+All database operations are isolated in repository classes (`ArchiveRepository`, `PgIndexRepository`, `ChunkRepository`). Endpoints and services never write SQL directly — they call high-level methods like `create_archive()`, `bulk_upsert_indices()`, or `search_similar_chunks()`.
 
 **Why:** Decouples business logic from the database layer. Swapping PostgreSQL for another DB requires changes only in the repository, not across the entire codebase.
 
@@ -31,10 +31,15 @@ Each background task opens its own isolated database session and commits exactly
 
 **Why:** Prevents partial writes. Either all extracted files are saved and the status is COMPLETED, or nothing is saved and the status is FAILED.
 
-### Lifespan (Single S3 Client)
-The `aioboto3` S3 client is created once at server startup via FastAPI `lifespan` and shared across all requests through `app.state.s3_client`.
+### Lifespan (Shared Clients)
+The `aioboto3` S3 client and Redis connection pool are created once at server startup via FastAPI `lifespan` and shared across all requests through `app.state`.
 
-**Why:** Creating a new S3 connection per request would exhaust the connection pool under load.
+**Why:** Creating a new S3 or Redis connection per request would exhaust the connection pool under load.
+
+### Publisher/Subscriber (Redis Pub/Sub)
+The Main API and RAG Service communicate exclusively via Redis Pub/Sub channels. The Main API publishes commands and subscribes to response channels. The RAG Service subscribes to command channels and publishes results back.
+
+**Why:** Fully decouples the two services. The Main API never imports RAG code — it only knows about Redis channel names. Either service can be restarted independently without affecting the other.
 
 ---
 
@@ -64,6 +69,11 @@ Archive processing is handled by Celery workers consuming tasks from a Redis que
 
 **Scaling:** `docker-compose up --scale worker=3` launches 3 independent worker processes.
 
+### Redis Connection Pool (Main API)
+The Main API manages a single `ConnectionPool` initialized at startup and shared across all requests. Individual `Redis` instances borrow connections from the pool per request.
+
+**Problem solved:** Creating a new physical Redis connection on every HTTP request would exhaust available sockets under load and add unnecessary latency.
+
 ### Dead Letter Queue (DLQ)
 Tasks that fail 3 times are automatically moved to a Dead Letter Queue. The archive status is updated to `FAILED` with the error message preserved.
 
@@ -84,6 +94,16 @@ The extractor streams file content directly into `IndexingService` during extrac
 
 **Problem solved:** Without on-the-fly indexing, indexing would require: read from S3 → extract → index. With on-the-fly: extract → index simultaneously → write to S3. Eliminates N+1 I/O requests to MinIO.
 
+### Token Budgeting & Lost-in-the-Middle Mitigation (RAG)
+Before sending context to the LLM, `ContextProcessor` applies two optimizations. First, it counts tokens via `tiktoken` and drops chunks that would exceed the 3000-token budget. Second, it reorders remaining chunks so the highest-relevance chunks appear at the beginning and end of the prompt — since LLMs tend to lose attention to content in the middle of long contexts.
+
+**Why:** Prevents token limit errors and improves answer quality without increasing API costs.
+
+### Exponential Backoff on OpenAI Calls (RAG)
+All OpenAI API calls in the RAG Service are wrapped with `tenacity` — up to 3 retries with exponential backoff starting at 2 seconds.
+
+**Why:** OpenAI's API occasionally returns 429 (rate limit) or 5xx errors under load. Retrying with backoff handles transient failures transparently without crashing the handler.
+
 ---
 
 ## 🗄️ Database Schema
@@ -102,13 +122,20 @@ extracted_files
 ├── archive_id (FK → archives.id)
 ├── file_name
 ├── size_bytes
-└── content
+└── s3_object_name
 
 word_indices
 ├── id (PK, autoincrement)
 ├── archive_id (FK → archives.id)
 ├── filename
 └── scores (JSONB) ← GIN index
+
+document_chunks
+├── id (PK, autoincrement)
+├── archive_id (FK → archives.id)
+├── filename
+├── chunk_text
+└── embedding (vector(1536)) ← pgvector cosine similarity
 ```
 
 ---
@@ -137,19 +164,29 @@ Load test conducted with **Locust** simulating 20-30 concurrent users performing
          Internet → │  Nginx  │ ← buffers uploads, protects from Slowloris
                     └────┬────┘
                          │
-                    ┌────▼──────┐
-                    │  FastAPI  │ ← async API, returns 202 immediately
-                    └────┬──────┘
-                         │ publishes task
-                    ┌────▼──────┐
-                    │   Redis   │ ← message broker
-                    └────┬──────┘
-                         │ consumes task
-              ┌──────────▼──────────┐
-              │   Celery Workers    │ ← scalable, restarts after 50 tasks
-              └──────┬──────┬───────┘
-                     │      │
-              ┌──────▼──┐ ┌─▼──────┐
-              │  MinIO  │ │  PgBouncer → PostgreSQL │
-              └─────────┘ └────────────────────────┘
+                    ┌────▼──────────┐
+                    │   FastAPI     │ ← async API, returns 202 immediately
+                    │   Main API    │
+                    └────┬──────────┘
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+     publishes tasks         publishes RAG commands
+              │                     │
+    ┌─────────▼──────┐     ┌────────▼────────┐
+    │  Redis (Celery) │     │  Redis (Pub/Sub) │
+    │  task queue     │     │  rag_index_cmds  │
+    └─────────┬───────┘     │  rag_search_reqs │
+              │             └────────┬─────────┘
+    ┌─────────▼──────────┐          │ subscribes
+    │   Celery Workers   │  ┌───────▼──────────┐
+    │  archive extraction│  │   RAG Service     │
+    └──────┬─────────────┘  │  embeddings + LLM │
+           │                └───────┬───────────┘
+           │                        │
+    ┌──────▼──────┐         ┌───────▼──────────────────┐
+    │   MinIO     │         │  PgBouncer → PostgreSQL   │
+    │  S3 storage │         │  pgvector (embeddings)    │
+    └─────────────┘         │  JSONB (BM25 index)       │
+                            └──────────────────────────┘
 ```

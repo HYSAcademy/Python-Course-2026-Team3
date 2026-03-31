@@ -92,3 +92,4 @@ class RagSearchResponse(BaseModel):
     correlation_id: str
     query: str
     answer: str
+    contexts: List[str]

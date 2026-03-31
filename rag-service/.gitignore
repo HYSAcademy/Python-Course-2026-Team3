@@ -15,9 +15,9 @@ logs/
 .venv/
 venv/
 ENV/
-
+*.json
 .env
-
+*.csv
 .vscode/
 
 .pytest_cache/

@@ -115,18 +115,19 @@ async def handle_search_request(data: dict):
         chunk_texts = [chunk.chunk_text for chunk in db_chunks]
         req_logger.info(f"Found {len(chunk_texts)} relevant chunks across the DB for refined query '{refined_query}'.")
         
-        answer = await llm_service.generate_answer(query, chunk_texts)
+        result = await llm_service.generate_answer(query, chunk_texts)
 
         response_payload = {
             "correlation_id": correlation_id,
             "query": query,
-            "answer": answer
+            "answer": result.get("answer", ""),
+            "contexts": result.get("contexts", [])
         }
 
         redis_client = get_redis_client()
         await redis_client.publish(f"rag_responses:{correlation_id}", json.dumps(response_payload))
 
-        req_logger.info("Answer successfully generated and published back to Redis!")
+        req_logger.info("Answer and contexts successfully generated and published back to Redis!")
 
     except Exception as e:
         req_logger.error(f"Error during search processing: {e}", exc_info=True)
@@ -134,7 +135,8 @@ async def handle_search_request(data: dict):
         error_payload = {
             "correlation_id": correlation_id,
             "query": query,
-            "answer": "An internal error occurred during the search. Please try again later."
+            "answer": "An internal error occurred during the search. Please try again later.",
+            "contexts": []
         }
         
         redis_client = get_redis_client()

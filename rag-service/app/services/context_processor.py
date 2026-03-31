@@ -19,11 +19,11 @@ class ContextProcessor:
     def count_tokens(self, text: str) -> int:
         return len(self._encoding.encode(text))
 
-    def prepare_context(self, chunks: list[str], max_tokens: int = 3000) -> str:
-        """Main method for preparing context."""
+    def prepare_context(self, chunks: list[str], max_tokens: int = 3000) -> tuple[str, list[str]]:
+        """Prepares the context by applying token budgeting and reordering for optimal LLM input."""
         budgeted = self._apply_token_budgeting(chunks, max_tokens)
         optimized = self._reorder_for_lost_in_the_middle(budgeted)
-        return "\n\n---\n\n".join(optimized)
+        return "\n\n---\n\n".join(optimized), optimized
 
     def _apply_token_budgeting(self, chunks: list[str], max_tokens: int) -> list[str]:
         """Applies token budgeting to limit the number of tokens in the context."""

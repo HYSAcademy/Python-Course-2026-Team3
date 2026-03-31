@@ -22,7 +22,7 @@ async def lifespan(app: FastAPI):
         app.state.s3_client = client
         yield
     
-    await app.state.redis_pool.aclose()
+    await app.state.redis_pool.disconnect()
     logger.info("Server shutting down! S3 client and Redis pool closed")
 
 app = FastAPI(title="Archive API", lifespan=lifespan)
